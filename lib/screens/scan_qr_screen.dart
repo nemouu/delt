@@ -7,9 +7,13 @@ import 'dart:math';
 import '../models/group.dart';
 import '../models/member.dart';
 import '../models/enums.dart';
+import '../models/trusted_wifi_network.dart';
 import '../database/dao/group_dao.dart';
 import '../database/dao/member_dao.dart';
 import '../database/dao/user_dao.dart';
+import '../database/dao/trusted_wifi_network_dao.dart';
+import 'package:network_info_plus/network_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// Screen for scanning QR codes to join groups
 class ScanQRScreen extends StatefulWidget {
@@ -113,10 +117,16 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
       final groupName = data['groupName'] as String;
       final secretKeyBase64 = data['secretKey'] as String;
       final currencies = List<String>.from(data['currencies'] as List);
+      final defaultCurrency = data['defaultCurrency'] as String?;
       final createdBy = data['createdBy'] as String;
       final createdAt = data['createdAt'] as int;
+      final syncMethodStr = data['syncMethod'] as String?;
+      final isSharedAcrossDevices = data['isSharedAcrossDevices'] as bool? ?? true;
 
       final secretKey = base64Decode(secretKeyBase64);
+      final syncMethod = syncMethodStr != null
+          ? SyncMethodExtension.fromStr(syncMethodStr)
+          : SyncMethod.wifiNetwork; // Default to wifiNetwork for shared groups
 
       // Check if already in this group
       final groupDao = GroupDao();
@@ -151,8 +161,11 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
             groupName: groupName,
             secretKey: Uint8List.fromList(secretKey),
             currencies: currencies,
+            defaultCurrency: defaultCurrency,
             createdBy: createdBy,
             createdAt: createdAt,
+            syncMethod: syncMethod,
+            isSharedAcrossDevices: isSharedAcrossDevices,
           );
         } else {
           setState(() {
@@ -180,8 +193,11 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     required String groupName,
     required Uint8List secretKey,
     required List<String> currencies,
+    String? defaultCurrency,
     required String createdBy,
     required int createdAt,
+    required SyncMethod syncMethod,
+    required bool isSharedAcrossDevices,
   }) async {
     try {
       final groupDao = GroupDao();
@@ -202,13 +218,14 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
         secretKey: secretKey,
         createdBy: createdBy,
         currencies: currencies,
+        defaultCurrency: defaultCurrency ?? (currencies.isNotEmpty ? currencies.first : 'EUR'),
         shareState: ShareState.active,
-        isSharedAcrossDevices: true,
+        isSharedAcrossDevices: isSharedAcrossDevices,
         knownDeviceIds: [],
-        syncMethod: SyncMethod.manual,
+        syncMethod: syncMethod,
         createdAt: createdAt,
         updatedAt: now,
-        lastSyncedAt: now,
+        lastSyncedAt: null, // Start with null to sync ALL data on first sync
         lastQRGeneratedAt: null,
       );
 
@@ -237,6 +254,10 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
             backgroundColor: Colors.green,
           ),
         );
+
+        // Prompt to trust current WiFi network
+        await _promptTrustNetwork(groupId, groupName);
+
         Navigator.pop(context, true); // Return to groups list
       }
     } catch (e) {
@@ -251,6 +272,120 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
           _hasScanned = false;
         });
       }
+    }
+  }
+
+  /// Prompt user to trust current WiFi network for auto-sync
+  Future<void> _promptTrustNetwork(String groupId, String groupName) async {
+    try {
+      // Request location permission (required for WiFi SSID on Android 10+)
+      final status = await Permission.location.request();
+
+      if (!status.isGranted) {
+        // Permission denied - can't get WiFi SSID
+        return;
+      }
+
+      final networkInfo = NetworkInfo();
+      final ssid = await networkInfo.getWifiName();
+
+      if (ssid == null) {
+        // Not connected to WiFi, skip prompt
+        return;
+      }
+
+      // Remove quotes from iOS SSID
+      final cleanSSID = ssid.replaceAll('"', '');
+
+      if (!mounted) return;
+
+      // Show dialog to ask if user wants to trust this network
+      final shouldTrust = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Trust WiFi Network?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Would you like to automatically sync "$groupName" when connected to this WiFi?',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.wifi, color: Colors.green[700]),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        cleanSSID,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'You can change this later in group settings.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not Now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Trust Network'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldTrust == true) {
+        final networkDao = TrustedWifiNetworkDao();
+        final now = DateTime.now().millisecondsSinceEpoch;
+
+        final trustedNetwork = TrustedWifiNetwork(
+          ssid: cleanSSID,
+          displayName: cleanSSID,
+          networkType: NetworkType.groupSpecific,
+          linkedGroupId: groupId,
+          addedAt: now,
+          updatedAt: now,
+        );
+
+        await networkDao.insertNetwork(trustedNetwork);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('WiFi "$cleanSSID" is now trusted'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Silently ignore errors - trust prompt is optional
+      debugPrint('Error prompting trust network: $e');
     }
   }
 

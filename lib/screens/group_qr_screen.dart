@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../models/group.dart';
+import '../models/enums.dart';
 import '../database/dao/group_dao.dart';
 
 /// Screen for displaying group QR code for sharing
@@ -79,8 +80,11 @@ class _GroupQRScreenState extends State<GroupQRScreen> {
       'groupName': group.name,
       'secretKey': base64Encode(group.secretKey),
       'currencies': group.currencies,
+      'defaultCurrency': group.defaultCurrency,
       'createdBy': group.createdBy,
       'createdAt': group.createdAt,
+      'syncMethod': group.syncMethod.toStr(),
+      'isSharedAcrossDevices': group.isSharedAcrossDevices,
     };
 
     return jsonEncode(inviteData);

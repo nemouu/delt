@@ -2,35 +2,55 @@
 
 ---
 
+## NEXT SESSION: Think about Automatic Sync Triggers
+
+**Important:** Think about when syncs should happen automatically:
+- On app startup/resume?
+- When switching to trusted WiFi network?
+- Periodic background syncs?
+- After creating/editing expenses?
+- User preference controls for auto-sync behavior?
+
+---
+
 ## Priority 1: Sync Implementation (CRITICAL)
+
+**COMPLETED - WiFi Network Sync is WORKING!**
+- Core protocol implemented with HMAC authentication
+- Bidirectional sync working between devices
+- Members, expenses, and settlements syncing correctly
+- Socket buffering and connection handling fixed
+- Timestamp filtering fixed for initial sync
+
+**Known Issue (Non-blocking):** Race condition when both phones sync simultaneously causes failed connection attempts in logs, but doesn't affect functionality.
 
 ### Core Sync Protocol (Required for All Methods)
 
 These files are needed regardless of which transport method we use:
 
-- [ ] **SyncMessage** (`lib/services/sync/sync_message.dart`)
-  - [ ] Define message types enum (HANDSHAKE, CHALLENGE, RESPONSE, DATA_REQUEST, DATA_RESPONSE, ACK, ERROR)
-  - [ ] Create SyncMessage class with JSON serialization
-  - [ ] Add validation for message structure
+- [x] **SyncMessage** (`lib/services/sync/sync_message.dart`)
+  - [x] Define message types enum (HANDSHAKE, CHALLENGE, RESPONSE, DATA_REQUEST, DATA_RESPONSE, ACK, ERROR)
+  - [x] Create SyncMessage class with JSON serialization
+  - [x] Add validation for message structure
   - [ ] Unit tests for serialization/deserialization
 
-- [ ] **SyncProtocol** (`lib/services/sync/sync_protocol.dart`)
-  - [ ] Implement handshake flow
-  - [ ] Add HMAC-SHA256 challenge-response authentication using group secret key
-  - [ ] Create data exchange protocol (request/response cycles)
-  - [ ] Implement conflict resolution (newest timestamp wins)
-  - [ ] Handle sync errors and retries
+- [x] **SyncProtocol** (`lib/services/sync/sync_protocol.dart`)
+  - [x] Implement handshake flow
+  - [x] Add HMAC-SHA256 challenge-response authentication using group secret key
+  - [x] Create data exchange protocol (request/response cycles)
+  - [x] Implement conflict resolution (newest timestamp wins)
+  - [x] Handle sync errors and retries
   - [ ] Unit tests for protocol flows
 
-- [ ] **SyncService** (`lib/services/sync/sync_service.dart`)
-  - [ ] Main sync orchestration service
-  - [ ] Manage multiple transport types
-  - [ ] Coordinate device discovery
-  - [ ] Execute sync protocol
-  - [ ] Update database with synced data
-  - [ ] Emit sync status events (for UI)
-  - [ ] Handle sync cancellation
-  - [ ] Conflict resolution integration
+- [x] **SyncService** (`lib/services/sync/sync_service.dart`)
+  - [x] Main sync orchestration service
+  - [x] Manage multiple transport types
+  - [x] Coordinate device discovery
+  - [x] Execute sync protocol
+  - [x] Update database with synced data
+  - [x] Emit sync status events (for UI)
+  - [x] Handle sync cancellation
+  - [x] Conflict resolution integration
 
 ### Transport Method A: WiFi Direct (Try First)
 
@@ -91,41 +111,38 @@ These files are needed regardless of which transport method we use:
   - [ ] Test in crowded Bluetooth environments
   - [ ] Measure battery impact
 
-### Transport Method C: WiFi Network Sync (Try Third)
+### Transport Method C: WiFi Network Sync FIRST IMPLEMENTATION DONE
 
-- [ ] **Research NSD/mDNS packages**
-  - [ ] Try `nsd` package (Network Service Discovery)
-  - [ ] Try `multicast_dns` package as alternative
-  - [ ] Check Android/iOS compatibility
-  - [ ] Review examples and limitations
-  - [ ] May need platform channels
+- [x] **Research NSD/mDNS packages**
+  - [x] Implemented simple IP scanning approach instead of NSD (simpler, no extra dependencies)
+  - [x] Works reliably on local networks
+  - [ ] Optional: Could add NSD later for optimization
 
-- [ ] **WiFiNetworkTransport** (`lib/services/sync/wifi_network_transport.dart`)
-  - [ ] Register NSD service (advertise as "_delt._tcp")
-  - [ ] Discover NSD services (find other devices)
-  - [ ] Create TCP server socket (dart:io ServerSocket) on random port
-  - [ ] Create TCP client socket (dart:io Socket) to connect
-  - [ ] Send/receive SyncMessage over socket
-  - [ ] Handle multiple simultaneous connections
-  - [ ] Timeout handling
+- [x] **WiFiNetworkTransport** (`lib/services/sync/wifi_network_transport.dart`)
+  - [x] Create TCP server socket (dart:io ServerSocket) on port 8765
+  - [x] Create TCP client socket (dart:io Socket) to connect
+  - [x] Send/receive SyncMessage over socket with length-prefixed framing
+  - [x] Handle multiple simultaneous connections
+  - [x] Timeout handling (30s message timeout)
+  - [x] Socket stream buffering (fixed "already listened to" error)
+  - [x] Peer discovery via subnet scanning (IP range scan)
+  - [x] Connection lifecycle management
 
-- [ ] **WiFiNetworkManager** (`lib/services/sync/wifi_network_manager.dart`)
-  - [ ] Get current WiFi SSID (use `network_info_plus` package)
-  - [ ] Check if connected to trusted network
-  - [ ] Listen for network changes
-  - [ ] Trigger sync when on trusted WiFi
-  - [ ] Handle iOS location permission requirement
+- [x] **WiFi Network Management**
+  - [x] Get current WiFi SSID (using `network_info_plus` package)
+  - [x] Check if connected to trusted network
+  - [x] Trigger sync when on trusted WiFi (in SyncService.checkAndSyncOnTrustedNetwork)
+  - [x] Handle location permission requirement (Android 10+)
+  - [x] Trusted network database (TrustedWifiNetwork DAO)
+  - [x] Prompt user to trust network after joining group via QR
 
-- [ ] **Platform Channels for NSD** (if packages insufficient)
-  - [ ] Android: Bridge to NsdManager APIs
-  - [ ] iOS: Bridge to NetService (Bonjour)
-  - [ ] Handle service registration/discovery callbacks
-
-- [ ] **Testing WiFi Network Sync**
-  - [ ] Test on same WiFi network
-  - [ ] Test service discovery reliability
-  - [ ] Test with router AP isolation enabled (should fail gracefully)
-  - [ ] Test connection speed
+- [x] **Testing WiFi Network Sync**
+  - [x] Test on same WiFi network
+  - [x] Test with 2 devices (creator and joiner)
+  - [x] Test bidirectional sync
+  - [x] Test authentication (HMAC challenge-response)
+  - [x] Test data merging (members, expenses, settlements)
+  - [ ] Test with router AP isolation enabled
   - [ ] Test with 3+ devices simultaneously
 
 ### Sync UI Components
@@ -162,15 +179,24 @@ These files are needed regardless of which transport method we use:
 
 ### Sync Integration & Testing
 
-- [ ] **Integration with existing flows**
-  - [ ] Trigger sync after QR code group join
-  - [ ] Trigger sync after adding group expense
-  - [ ] Trigger sync when opening group details (pull-to-refresh)
-  - [ ] Background sync when on trusted WiFi (Android WorkManager?)
-  - [ ] Sync notification when in background
+- [ ] **Integration with existing flows** ⚠️ NEEDS DISCUSSION
+  - [x] Trigger sync after QR code group join (basic implementation)
+  - [x] Manual sync from settings screen
+  - [x] Auto-sync on app startup when on trusted WiFi (implemented in home_screen.dart)
+  - [ ] **NEXT SESSION:** Decide when auto-sync should trigger:
+    - After adding/editing group expense?
+    - Periodic background syncs?
+    - Pull-to-refresh on group details?
+    - Background sync when app is not active?
+    - Sync notification when in background?
+    - User preference controls?
 
 - [ ] **Comprehensive Sync Testing**
-  - [ ] Test conflict resolution (same expense edited on 2 devices)
+  - [x] Test basic sync (members, expenses, settlements)
+  - [x] Test bidirectional sync (both directions working)
+  - [x] Test conflict resolution (newest timestamp wins - working)
+  - [x] Test authentication (HMAC challenge-response - working)
+  - [x] Test initial sync from joiner (timestamp filtering fixed)
   - [ ] Test new member added on both devices simultaneously
   - [ ] Test expense deleted on one device while edited on another
   - [ ] Test large group data (100+ expenses)
@@ -179,10 +205,10 @@ These files are needed regardless of which transport method we use:
   - [ ] Test battery optimization impact
   - [ ] Test with 3+ devices in same group
 
-- [ ] **Sync Decision & Cleanup**
-  - [ ] Pick the best working method based on tests
-  - [ ] Remove code for non-chosen methods (keep it clean)
-  - [ ] Update README with chosen sync approach
+- [x] **Sync Decision & Cleanup**
+  - [x] Chose WiFi Network Sync (simplest, most reliable for local networks)
+  - [ ] Optional: Remove WiFi Direct and Bluetooth sections from todo (not needed)
+  - [ ] Update README with sync approach documentation
   - [ ] Document sync limitations and best practices
 
 ---
@@ -360,7 +386,3 @@ These files are needed regardless of which transport method we use:
   - [ ] Release automation
 
 ---
-
-**Last Updated:** 2025-12-18
-**Current Status:** Sync research and implementation phase
-**Next Milestone:** Get one sync method working end-to-end

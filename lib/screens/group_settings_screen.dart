@@ -6,7 +6,10 @@ import '../database/dao/group_dao.dart';
 import '../database/dao/member_dao.dart';
 import '../database/dao/user_dao.dart';
 import '../database/dao/group_expense_dao.dart';
+import '../database/dao/trusted_wifi_network_dao.dart';
+import '../services/sync/sync_service.dart';
 import 'manage_group_currencies_screen.dart';
+import 'package:intl/intl.dart';
 
 /// Group settings screen
 class GroupSettingsScreen extends StatefulWidget {
@@ -26,11 +29,15 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
   final _memberDao = MemberDao();
   final _userDao = UserDao();
   final _expenseDao = GroupExpenseDao();
+  final _networkDao = TrustedWifiNetworkDao();
+  final _syncService = SyncService.instance;
 
   Group? _group;
   List<Member> _members = [];
   Member? _currentMember;
+  int _trustedNetworkCount = 0;
   bool _isLoading = true;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -57,10 +64,14 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         );
       }
 
+      // Load trusted networks count
+      final networks = await _networkDao.getNetworksByGroupId(widget.groupId);
+
       setState(() {
         _group = group;
         _members = members;
         _currentMember = currentMember;
+        _trustedNetworkCount = networks.length;
         _isLoading = false;
       });
     } catch (e) {
@@ -131,6 +142,46 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
           ),
 
           const Divider(),
+
+          // Sync Settings (only show for shared groups)
+          if (_group!.isSharedAcrossDevices) ...[
+            _buildSectionHeader('Sync Settings'),
+            ListTile(
+              leading: const Icon(Icons.sync),
+              title: const Text('Sync Now'),
+              subtitle: _group!.lastSyncedAt != null
+                  ? Text('Last synced: ${_formatLastSync(_group!.lastSyncedAt!)}')
+                  : const Text('Never synced'),
+              trailing: _isSyncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right),
+              onTap: _isSyncing ? null : _manualSync,
+            ),
+            ListTile(
+              leading: const Icon(Icons.wifi),
+              title: const Text('Trusted WiFi Networks'),
+              subtitle: Text('$_trustedNetworkCount network${_trustedNetworkCount != 1 ? 's' : ''}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _manageTrustedNetworks,
+            ),
+            ListTile(
+              leading: Icon(
+                _group!.shareState == ShareState.active
+                    ? Icons.check_circle
+                    : Icons.pending,
+                color: _group!.shareState == ShareState.active
+                    ? Colors.green
+                    : Colors.orange,
+              ),
+              title: const Text('Sync Status'),
+              subtitle: Text(_getSyncStatusText()),
+            ),
+            const Divider(),
+          ],
 
           // Danger Zone
           _buildSectionHeader('Danger Zone', color: Colors.red),
@@ -369,5 +420,94 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
         }
       }
     }
+  }
+
+  /// Format last sync timestamp
+  String _formatLastSync(int timestamp) {
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} min ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} hour${difference.inHours != 1 ? 's' : ''} ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} day${difference.inDays != 1 ? 's' : ''} ago';
+    } else {
+      return DateFormat('MMM d, yyyy').format(date);
+    }
+  }
+
+  /// Get sync status text
+  String _getSyncStatusText() {
+    switch (_group!.shareState) {
+      case ShareState.local:
+        return 'Not shared';
+      case ShareState.pending:
+        return 'Waiting for first sync';
+      case ShareState.active:
+        return 'Active - syncing automatically';
+    }
+  }
+
+  /// Manual sync trigger
+  Future<void> _manualSync() async {
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final result = await _syncService.syncGroup(widget.groupId);
+
+      if (mounted) {
+        if (result.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Synced successfully! ${result.syncedExpenses} expense(s), ${result.syncedMembers} member(s)',
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          // Reload data to show updated lastSyncedAt
+          await _loadData();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Sync failed: ${result.error ?? "Unknown error"}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error during sync: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
+      }
+    }
+  }
+
+  /// Manage trusted networks (placeholder for now)
+  Future<void> _manageTrustedNetworks() async {
+    // TODO: Implement trusted networks management screen
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Trusted network management coming soon!'),
+      ),
+    );
   }
 }

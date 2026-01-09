@@ -11,6 +11,7 @@ import 'models/group.dart';
 import 'models/member.dart';
 import 'models/enums.dart';
 import 'services/security_manager.dart';
+import 'services/device_manager.dart';
 import 'screens/pin_setup_screen.dart';
 import 'screens/pin_unlock_screen.dart';
 import 'screens/home_screen.dart';
@@ -132,6 +133,11 @@ class _AppInitializerState extends State<AppInitializer> {
     final dbHelper = DatabaseHelper.instance;
     await dbHelper.openDatabase(passphrase);
 
+    // Initialize device ID and set device name
+    final deviceManager = DeviceManager.instance;
+    await deviceManager.getDeviceId(); // Initialize device ID
+    await deviceManager.setDeviceName(username); // Set device name to username
+
     // Create user record
     final userDao = UserDao();
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -208,6 +214,10 @@ class _AppInitializerState extends State<AppInitializer> {
     // Open database
     final dbHelper = DatabaseHelper.instance;
     await dbHelper.openDatabase(passphrase);
+
+    // Initialize device ID (if not already)
+    final deviceManager = DeviceManager.instance;
+    await deviceManager.getDeviceId();
 
     setState(() {
       _appState = AppState.unlocked;
