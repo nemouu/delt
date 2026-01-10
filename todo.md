@@ -11,6 +11,8 @@
 - After creating/editing expenses?
 - User preference controls for auto-sync behavior?
 
+- also in addition to that we should add a dialog about the needed location services and only if users agree to that dialog, let android ask for the permission. Not just when you navigate to "create group". Mainly because the location is not needed if users want a local group.
+- remember in the end to potentially update the manifest!!
 ---
 
 ## Priority 1: Sync Implementation (CRITICAL)
